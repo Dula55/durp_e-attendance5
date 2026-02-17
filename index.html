@@ -71,9 +71,10 @@
         .view-container { display: none; }
         .view-container.active { display: block; animation: fadeIn 0.3s ease-out; }
         @media print { .no-print { display: none !important; } body { background: #fff !important; } }
-        .sync-indicator { transition: all 0.3s ease; }
-        .sync-pulse { animation: pulse 2s infinite; }
-        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.6; } 100% { opacity: 1; } }
+        .sync-indicator { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; }
+        .sync-indicator.syncing { color: #f59e0b; }
+        .sync-indicator.synced { color: #10b981; }
+        .sync-indicator.error { color: #ef4444; }
     </style>
 </head>
 <body class="bg-background-light dark:bg-background-dark text-slate-900 dark:text-white font-display" data-view="home">
@@ -104,12 +105,6 @@
                     <button onclick="toggleTheme()" class="p-2 rounded-full bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700">
                         <span id="themeIcon" class="material-symbols-outlined text-slate-700 dark:text-slate-300">dark_mode</span>
                     </button>
-                    
-                    <!-- Cloud Sync Indicator -->
-                    <div id="cloudSyncIndicator" class="hidden md:flex items-center space-x-1 text-xs bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400 px-2 py-1 rounded-full">
-                        <span class="material-symbols-outlined text-sm">cloud_done</span>
-                        <span>Synced</span>
-                    </div>
                 </div>
             </div>
         </div>
@@ -133,7 +128,7 @@
                     <button onclick="showView('signup')" class="text-sm text-slate-500 hover:text-primary transition">Create Account</button>
                 </div>
                 
-                <p class="mt-8 text-xs text-slate-500">Version 2.1.0 • Real-Time Cloud Sync</p>
+                <p class="mt-8 text-xs text-slate-500">Version 2.1.0 • Cross-Device Sync Enabled</p>
             </div>
         </div>
 
@@ -146,7 +141,7 @@
                         <img src="static/NSUK-logo.jpg" alt="NSUK Logo" class="h-24 w-24 rounded-2xl shadow-lg object-cover">
                     </div>
                     <h1 class="text-4xl md:text-5xl font-bold text-slate-900 dark:text-white mb-4">NSUK URP E-Attendance System</h1>
-                    <p class="text-xl text-slate-600 dark:text-slate-400 max-w-2xl mx-auto">Streamline attendance tracking for Urban and Regional Planning Department with real-time cloud synchronization</p>
+                    <p class="text-xl text-slate-600 dark:text-slate-400 max-w-2xl mx-auto">Streamline attendance tracking for Urban and Regional Planning Department with cloud synchronization</p>
                 </div>
                 
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
@@ -227,7 +222,7 @@
                     <div class="mt-4 text-center">
                         <p class="text-xs text-slate-400 flex items-center justify-center">
                             <span class="material-symbols-outlined text-sm mr-1">cloud_sync</span>
-                            Real-time sync across all devices
+                            Cloud-synchronized across all devices
                         </p>
                     </div>
                 </div>
@@ -558,7 +553,7 @@
                                 <span class="material-symbols-outlined text-slate-400">cloud_sync</span>
                                 <div>
                                     <p class="text-sm text-slate-600 dark:text-slate-400">Sync Status</p>
-                                    <p id="studentSyncStatus" class="font-medium text-green-600 dark:text-green-400">Real-time sync</p>
+                                    <p id="studentSyncStatus" class="font-medium text-green-600 dark:text-green-400">Cloud-synced</p>
                                 </div>
                             </div>
                         </div>
@@ -579,7 +574,7 @@
             </div>
         </div>
 
-        <!-- LECTURER DASHBOARD - Enhanced with real-time sync -->
+        <!-- LECTURER DASHBOARD - Enhanced for cross-device visibility -->
         <div id="lecturerDashboardView" class="view-container">
             <div class="bg-white dark:bg-slate-800 rounded-2xl shadow-soft p-6 mb-8 border-l-4 border-primary">
                 <div class="flex items-center justify-between">
@@ -592,6 +587,14 @@
                         <span class="material-symbols-outlined text-4xl text-primary dark:text-blue-400">co_present</span>
                     </div>
                 </div>
+            </div>
+
+            <!-- Manual Sync Button -->
+            <div class="mb-6 flex justify-end">
+                <button onclick="forceCloudSync()" class="bg-primary hover:bg-primary-hover text-white px-6 py-3 rounded-xl font-semibold transition-colors flex items-center">
+                    <span class="material-symbols-outlined mr-2">cloud_sync</span>
+                    Sync Now
+                </button>
             </div>
 
             <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
@@ -626,21 +629,7 @@
                 </div>
             </div>
 
-            <!-- Real-time Sync Status Bar -->
-            <div id="realtimeSyncBar" class="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-900 rounded-xl p-3 mb-6 flex items-center justify-between">
-                <div class="flex items-center">
-                    <span class="material-symbols-outlined text-green-600 dark:text-green-400 mr-2">sync</span>
-                    <span class="text-sm text-green-800 dark:text-green-300">Real-time sync active - Updates appear automatically</span>
-                </div>
-                <div class="flex items-center space-x-2">
-                    <span class="text-xs text-green-600 dark:text-green-400" id="lastSyncTimeDetailed">Just now</span>
-                    <button onclick="forceFullSync()" class="text-xs bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded-lg transition-colors">
-                        Sync Now
-                    </button>
-                </div>
-            </div>
-
-            <!-- Submitted Attendance Table - Enhanced for real-time updates -->
+            <!-- Submitted Attendance Table - Enhanced with cross-device sync -->
             <div class="bg-white dark:bg-slate-800 rounded-2xl shadow-soft p-6 mb-8">
                 <div class="flex justify-between items-center mb-6">
                     <h2 class="text-2xl font-bold text-slate-900 dark:text-white">Submitted Attendance</h2>
@@ -662,7 +651,7 @@
                                 <input type="checkbox" id="autoRefresh" checked class="mr-2 rounded border-slate-300 text-primary focus:ring-primary">
                                 <label for="autoRefresh" class="text-sm text-slate-600 dark:text-slate-400">Auto-refresh</label>
                             </div>
-                            <button onclick="refreshAttendanceTable(true)" class="bg-primary/10 text-primary dark:text-blue-400 hover:bg-primary/20 px-3 py-1 rounded-lg text-sm font-medium transition-colors flex items-center">
+                            <button onclick="refreshAttendanceTable()" class="bg-primary/10 text-primary dark:text-blue-400 hover:bg-primary/20 px-3 py-1 rounded-lg text-sm font-medium transition-colors flex items-center">
                                 <span class="material-symbols-outlined text-sm mr-1">refresh</span>Refresh Now
                             </button>
                         </div>
@@ -686,7 +675,7 @@
                                 <td colspan="7" class="py-8 px-4 text-center text-slate-500 dark:text-slate-400">
                                     <span class="material-symbols-outlined text-4xl mb-3 block mx-auto">assignment</span>
                                     No attendance records found
-                                    <p class="text-sm mt-2">When students submit attendance, they will appear here in real-time</p>
+                                    <p class="text-sm mt-2">When students submit attendance, they will appear here</p>
                                 </td>
                             </tr>
                         </tbody>
@@ -842,7 +831,7 @@
                         Department of Urban and Regional Planning<br>
                         Nasarawa State University, Keffi
                     </p>
-                    <p class="text-xs text-slate-500 dark:text-slate-500 mt-2">Developed by A. Suleiman • © <span id="currentYear"></span> • Real-Time Sync v2.1</p>
+                    <p class="text-xs text-slate-500 dark:text-slate-500 mt-2">Developed by A. Suleiman • © <span id="currentYear"></span> • Cross-Device Sync v2.1</p>
                 </div>
             </div>
         </div>
@@ -872,27 +861,26 @@
         // Auto-refresh interval for lecturer dashboard
         let autoRefreshInterval = null;
         let lastSyncTime = new Date();
-        let lastRecordCount = 0;
         let isSyncing = false;
         
         // Set current year in footer
         document.getElementById('currentYear').textContent = new Date().getFullYear();
         
-        // Enhanced Remote Storage Functions with retry logic
-        async function syncToCloud(retryCount = 0) {
+        // Enhanced Remote Storage Functions
+        async function syncToCloud() {
             if (!navigator.onLine) {
-                updateSyncIndicator('offline');
                 console.log('Offline: Data saved locally only');
+                showFlashMessage('You are offline. Data will sync when connection is restored.', 'warning');
                 return false;
             }
             
             if (isSyncing) {
-                console.log('Sync already in progress, skipping...');
+                console.log('Sync already in progress');
                 return false;
             }
             
             isSyncing = true;
-            updateSyncIndicator('syncing');
+            showSyncIndicator('syncing');
             
             const users = JSON.parse(localStorage.getItem('users') || '[]');
             const attendance = JSON.parse(localStorage.getItem('attendanceRecords') || '[]');
@@ -902,8 +890,7 @@
                 attendance: attendance,
                 timestamp: Date.now(),
                 syncDevice: navigator.userAgent,
-                syncTime: new Date().toISOString(),
-                version: '2.1.0'
+                syncTime: new Date().toISOString()
             };
             
             try {
@@ -923,12 +910,7 @@
                     localStorage.setItem('lastCloudSync', Date.now().toString());
                     lastSyncTime = new Date();
                     updateLastSyncTime();
-                    updateSyncIndicator('success');
-                    
-                    // Mark all local records as synced
-                    const updatedAttendance = attendance.map(record => ({ ...record, synced: true }));
-                    localStorage.setItem('attendanceRecords', JSON.stringify(updatedAttendance));
-                    
+                    showSyncIndicator('synced');
                     isSyncing = false;
                     return true;
                 } else {
@@ -936,33 +918,26 @@
                 }
             } catch (error) {
                 console.error('Sync failed:', error);
-                updateSyncIndicator('error');
+                showSyncIndicator('error');
                 isSyncing = false;
-                
-                // Retry logic
-                if (retryCount < 3) {
-                    console.log(`Retrying sync (${retryCount + 1}/3)...`);
-                    await new Promise(resolve => setTimeout(resolve, 2000));
-                    return syncToCloud(retryCount + 1);
-                }
                 return false;
             }
         }
         
-        async function syncFromCloud(retryCount = 0) {
+        async function syncFromCloud() {
             if (!navigator.onLine) {
-                updateSyncIndicator('offline');
                 console.log('Offline: Using local data');
+                showFlashMessage('You are offline. Using locally stored data.', 'warning');
                 return false;
             }
             
             if (isSyncing) {
-                console.log('Sync already in progress, skipping...');
+                console.log('Sync already in progress');
                 return false;
             }
             
             isSyncing = true;
-            updateSyncIndicator('syncing');
+            showSyncIndicator('syncing');
             
             try {
                 const response = await fetch(REMOTE_STORAGE_URL + '/latest', {
@@ -997,28 +972,18 @@
                     
                     const mergedUsers = Array.from(userMap.values());
                     
-                    // Merge attendance records by ID, keeping the latest
+                    // Merge attendance records by ID
                     const localAttendance = JSON.parse(localStorage.getItem('attendanceRecords') || '[]');
                     const remoteAttendance = data.record.attendance || [];
                     
                     const attendanceMap = new Map();
                     localAttendance.forEach(record => attendanceMap.set(record.id, record));
-                    remoteAttendance.forEach(record => {
-                        const existingRecord = attendanceMap.get(record.id);
-                        if (!existingRecord || (record.timestamp && existingRecord.timestamp && new Date(record.timestamp) > new Date(existingRecord.timestamp))) {
-                            attendanceMap.set(record.id, { ...record, synced: true });
-                        }
-                    });
+                    remoteAttendance.forEach(record => attendanceMap.set(record.id, record));
                     
                     const mergedAttendance = Array.from(attendanceMap.values());
                     
-                    // Check if there are new records
-                    const newRecordCount = mergedAttendance.length - lastRecordCount;
-                    if (newRecordCount > 0) {
-                        showFlashMessage(`${newRecordCount} new attendance record(s) synced from cloud!`, 'success');
-                    }
-                    
-                    lastRecordCount = mergedAttendance.length;
+                    // Sort attendance by timestamp (newest first)
+                    mergedAttendance.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
                     
                     // Save merged data
                     localStorage.setItem('users', JSON.stringify(mergedUsers));
@@ -1026,7 +991,6 @@
                     
                     lastSyncTime = new Date();
                     updateLastSyncTime();
-                    updateSyncIndicator('success');
                     
                     console.log('Data loaded from cloud:', {
                         users: mergedUsers.length,
@@ -1042,59 +1006,69 @@
                         }
                     }
                     
+                    showSyncIndicator('synced');
                     isSyncing = false;
+                    
+                    // Show success message with record count
+                    showFlashMessage(`Synced ${mergedAttendance.length} attendance records from cloud`, 'success');
+                    
                     return true;
                 }
             } catch (error) {
                 console.error('Sync failed:', error);
-                updateSyncIndicator('error');
+                showSyncIndicator('error');
                 isSyncing = false;
-                
-                // Retry logic
-                if (retryCount < 3) {
-                    console.log(`Retrying sync (${retryCount + 1}/3)...`);
-                    await new Promise(resolve => setTimeout(resolve, 2000));
-                    return syncFromCloud(retryCount + 1);
-                }
                 return false;
             }
         }
         
-        // Update cloud sync indicator
-        function updateSyncIndicator(status) {
-            const indicator = document.getElementById('cloudSyncIndicator');
-            if (!indicator) return;
-            
-            indicator.classList.remove('hidden');
-            const icon = indicator.querySelector('.material-symbols-outlined');
-            const text = indicator.querySelector('span:last-child');
-            
-            switch(status) {
-                case 'syncing':
-                    icon.textContent = 'sync';
-                    icon.classList.add('animate-spin');
-                    text.textContent = 'Syncing...';
-                    indicator.className = 'md:flex items-center space-x-1 text-xs bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 px-2 py-1 rounded-full';
-                    break;
-                case 'success':
-                    icon.textContent = 'cloud_done';
-                    icon.classList.remove('animate-spin');
-                    text.textContent = 'Synced';
-                    indicator.className = 'md:flex items-center space-x-1 text-xs bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400 px-2 py-1 rounded-full';
-                    break;
-                case 'error':
-                    icon.textContent = 'cloud_off';
-                    icon.classList.remove('animate-spin');
-                    text.textContent = 'Sync failed';
-                    indicator.className = 'md:flex items-center space-x-1 text-xs bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 px-2 py-1 rounded-full';
-                    break;
-                case 'offline':
-                    icon.textContent = 'cloud_off';
-                    icon.classList.remove('animate-spin');
-                    text.textContent = 'Offline';
-                    indicator.className = 'md:flex items-center space-x-1 text-xs bg-yellow-50 dark:bg-yellow-900/20 text-yellow-600 dark:text-yellow-400 px-2 py-1 rounded-full';
-                    break;
+        // Force cloud sync (manual trigger)
+        async function forceCloudSync() {
+            showFlashMessage('Syncing with cloud...', 'info');
+            const syncSuccess = await syncData(true);
+            if (syncSuccess) {
+                showFlashMessage('Sync completed successfully!', 'success');
+            } else {
+                showFlashMessage('Sync failed. Please check your internet connection.', 'error');
             }
+        }
+        
+        // Show sync indicator
+        function showSyncIndicator(status) {
+            const lastSyncElement = document.getElementById('lastSyncTime');
+            if (!lastSyncElement) return;
+            
+            const parent = lastSyncElement.parentElement;
+            if (!parent) return;
+            
+            // Remove existing indicators
+            const existingIndicator = parent.querySelector('.sync-indicator');
+            if (existingIndicator) {
+                existingIndicator.remove();
+            }
+            
+            const indicator = document.createElement('span');
+            indicator.className = `sync-indicator ${status} ml-2`;
+            
+            if (status === 'syncing') {
+                indicator.innerHTML = '<span class="material-symbols-outlined text-sm animate-spin">sync</span> Syncing...';
+            } else if (status === 'synced') {
+                indicator.innerHTML = '<span class="material-symbols-outlined text-sm">check_circle</span> Synced';
+                setTimeout(() => {
+                    if (indicator.parentNode) {
+                        indicator.remove();
+                    }
+                }, 3000);
+            } else if (status === 'error') {
+                indicator.innerHTML = '<span class="material-symbols-outlined text-sm">error</span> Sync failed';
+                setTimeout(() => {
+                    if (indicator.parentNode) {
+                        indicator.remove();
+                    }
+                }, 3000);
+            }
+            
+            parent.appendChild(indicator);
         }
         
         // Real-time sync functions
@@ -1109,7 +1083,7 @@
                     
                     // If we're in lecturer dashboard, refresh the table
                     if (currentUser && currentUser.role === 'lecturer' && document.getElementById('lecturerDashboardView').classList.contains('active')) {
-                        refreshAttendanceTable(force);
+                        await refreshAttendanceTable();
                     }
                     
                     return true;
@@ -1121,24 +1095,14 @@
             return false;
         }
         
-        // Force full sync (pull then push)
-        async function forceFullSync() {
-            showFlashMessage('Starting full cloud sync...', 'info');
-            await syncData(true);
-            showFlashMessage('Full sync completed!', 'success');
-        }
-        
         function updateLastSyncTime() {
             const now = new Date();
             const diffMs = now - lastSyncTime;
             const diffMins = Math.floor(diffMs / 60000);
-            const diffSecs = Math.floor(diffMs / 1000);
             
             let timeText = '';
-            if (diffSecs < 10) {
+            if (diffMins < 1) {
                 timeText = 'Just now';
-            } else if (diffMins < 1) {
-                timeText = `${diffSecs} seconds ago`;
             } else if (diffMins < 60) {
                 timeText = `${diffMins} minute${diffMins === 1 ? '' : 's'} ago`;
             } else {
@@ -1149,11 +1113,6 @@
             const lastSyncElement = document.getElementById('lastSyncTime');
             if (lastSyncElement) {
                 lastSyncElement.textContent = timeText;
-            }
-            
-            const detailedSyncElement = document.getElementById('lastSyncTimeDetailed');
-            if (detailedSyncElement) {
-                detailedSyncElement.textContent = timeText;
             }
         }
         
@@ -1171,9 +1130,9 @@
                     if (navigator.onLine) {
                         await syncData();
                     }
-                }, 10000); // Sync every 10 seconds for real-time feel
+                }, 15000); // Sync every 15 seconds (faster for better cross-device visibility)
                 
-                console.log('Real-time auto-refresh started');
+                console.log('Auto-refresh started');
             }
         }
         
@@ -1682,8 +1641,8 @@
             }, 1500);
         }
         
-        // Lecturer Dashboard Functions
-        function loadLecturerDashboard() {
+        // Lecturer Dashboard Functions - Enhanced for cross-device visibility
+        async function loadLecturerDashboard() {
             console.log('Loading lecturer dashboard...');
             if (!currentUser || currentUser.role !== 'lecturer') {
                 showFlashMessage('Access denied. Please login as lecturer.', 'error');
@@ -1696,18 +1655,26 @@
             // Start auto-refresh
             startAutoRefresh();
             
-            // Load attendance table
-            refreshAttendanceTable(true);
-        }
-        
-        async function refreshAttendanceTable(forceSync = false) {
-            // Sync data first if online
-            if (navigator.onLine && forceSync) {
-                await syncData();
+            // Force initial sync from cloud to get all attendance records
+            if (navigator.onLine) {
+                showFlashMessage('Syncing attendance records from cloud...', 'info');
+                await syncFromCloud();
             }
             
-            // Get all attendance records from localStorage
+            // Load attendance table
+            await refreshAttendanceTable();
+        }
+        
+        async function refreshAttendanceTable() {
+            // Force sync from cloud first to get latest data from other devices
+            if (navigator.onLine) {
+                await syncFromCloud();
+            }
+            
+            // Get all attendance records from localStorage (now updated with cloud data)
             const records = JSON.parse(localStorage.getItem('attendanceRecords') || '[]');
+            
+            console.log('Total attendance records after sync:', records.length);
             
             // Calculate statistics
             const today = new Date().toISOString().split('T')[0];
@@ -1727,7 +1694,7 @@
             // Update sync time
             updateLastSyncTime();
             
-            console.log('Attendance table refreshed with', records.length, 'records');
+            showFlashMessage(`Loaded ${records.length} attendance records from all devices`, 'success');
         }
         
         function loadSubmittedAttendanceTable(allRecords) {
@@ -1789,7 +1756,13 @@
             const pageRecords = filteredRecords.slice(startIndex, endIndex);
             
             // Render table rows
-            submittedAttendance.innerHTML = pageRecords.map(record => `
+            submittedAttendance.innerHTML = pageRecords.map(record => {
+                // Determine if record is from another device
+                const isFromOtherDevice = record.deviceType && 
+                    ((record.deviceType === 'Mobile' && !/Mobile|Android|iPhone|iPad|iPod/.test(navigator.userAgent)) ||
+                     (record.deviceType === 'Desktop' && /Mobile|Android|iPhone|iPad|iPod/.test(navigator.userAgent)));
+                
+                return `
                 <tr class="border-t border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-900/50 transition-colors">
                     <td class="py-3 px-4">
                         <div class="flex items-center">
@@ -1800,6 +1773,8 @@
                             ${record.synced ? 
                                 '<span class="ml-2 material-symbols-outlined text-sm text-green-500" title="Cloud synced">cloud_done</span>' : 
                                 '<span class="ml-2 material-symbols-outlined text-sm text-yellow-500" title="Not synced">cloud_off</span>'}
+                            ${isFromOtherDevice ? 
+                                '<span class="ml-2 material-symbols-outlined text-sm text-purple-500" title="From another device">devices</span>' : ''}
                         </div>
                     </td>
                     <td class="py-3 px-4 font-mono">${record.matricNumber}</td>
@@ -1826,7 +1801,7 @@
                         </div>
                     </td>
                 </tr>
-            `).join('');
+            `}).join('');
             
             // Update pagination info
             attendanceCount.textContent = `Showing ${startIndex + 1}-${Math.min(endIndex, filteredRecords.length)} of ${filteredRecords.length} records`;
@@ -2029,7 +2004,7 @@
                     doc.setTextColor(100);
                     doc.setFont("helvetica", "normal");
                     doc.text('This is an electronically generated attendance record from NSUK URP E-Attendance System', 148, 195, { align: 'center' });
-                    doc.text('Valid without signature • Real-time cloud sync', 148, 200, { align: 'center' });
+                    doc.text('Valid without signature • Cloud-synchronized', 148, 200, { align: 'center' });
                     
                     // Generate filename
                     const filename = `attendance_${record.matricNumber}_${record.date}_${record.time.replace(/:/g, '-')}.pdf`;
@@ -2045,7 +2020,7 @@
             }
         }
 
-        // Download multiple records as PDF
+        // Optional: Add a function to download multiple records as PDF
         function downloadMultipleRecordsAsPDF(recordIds) {
             const records = JSON.parse(localStorage.getItem('attendanceRecords') || '[]');
             const selectedRecords = records.filter(r => recordIds.includes(r.id));
@@ -2148,7 +2123,7 @@
                 await syncToCloud();
                 
                 showFlashMessage('Record deleted successfully!', 'success');
-                refreshAttendanceTable(true);
+                refreshAttendanceTable();
             }
         }
         
@@ -2626,7 +2601,6 @@
             // Initialize sync
             setTimeout(async () => {
                 await syncFromCloud();
-                updateSyncIndicator('success');
             }, 1000);
             
             // Check for existing user session
@@ -2764,23 +2738,12 @@
             // Online/offline detection
             window.addEventListener('online', async () => {
                 showFlashMessage('You are back online. Syncing data...', 'success');
-                updateSyncIndicator('syncing');
-                await syncData(true);
-                updateSyncIndicator('success');
-                showFlashMessage('Data synced successfully!', 'success');
+                await syncData();
             });
             
             window.addEventListener('offline', () => {
                 showFlashMessage('You are offline. Working with local data.', 'warning');
-                updateSyncIndicator('offline');
             });
-            
-            // Periodic sync every 30 seconds when online
-            setInterval(async () => {
-                if (navigator.onLine && currentUser) {
-                    await syncData();
-                }
-            }, 30000);
             
             console.log('Event listeners initialized');
         });
