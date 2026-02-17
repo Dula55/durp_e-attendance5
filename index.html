@@ -13,13 +13,13 @@
     <!-- Material Symbols -->
     <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
     
-    <!-- Tailwind CSS -->
-    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
-    
     <!-- jsPDF library for PDF generation -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-    <!-- Optional: autoTable plugin for better table formatting in PDF -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.4/jspdf.plugin.autotable.min.js"></script>
+    <!-- AutoTable plugin for jsPDF -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.29/jspdf.plugin.autotable.min.js"></script>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
     
     <script id="tailwind-config">
         tailwind.config = {
@@ -652,8 +652,8 @@
                 <button onclick="generateReport()" class="bg-purple-600 hover:bg-purple-700 text-white py-3 rounded-xl font-semibold transition-colors flex items-center justify-center">
                     <span class="material-symbols-outlined mr-2">summarize</span>Generate Report
                 </button>
-                <button onclick="exportDataAsPDF()" class="bg-green-600 hover:bg-green-700 text-white py-3 rounded-xl font-semibold transition-colors flex items-center justify-center">
-                    <span class="material-symbols-outlined mr-2">picture_as_pdf</span>Export PDF
+                <button onclick="exportData()" class="bg-green-600 hover:bg-green-700 text-white py-3 rounded-xl font-semibold transition-colors flex items-center justify-center">
+                    <span class="material-symbols-outlined mr-2">download</span>Export CSV
                 </button>
             </div>
         </div>
@@ -1584,8 +1584,8 @@
                             <button onclick="viewFaceImage('${record.id}')" class="text-primary hover:text-primary-hover transition-colors p-1 rounded hover:bg-blue-50 dark:hover:bg-blue-900/20" title="View Face">
                                 <span class="material-symbols-outlined align-middle">visibility</span>
                             </button>
-                            <button onclick="downloadRecord('${record.id}')" class="text-green-600 hover:text-green-800 dark:text-green-400 dark:hover:text-green-300 transition-colors p-1 rounded hover:bg-green-50 dark:hover:bg-green-900/20" title="Download">
-                                <span class="material-symbols-outlined align-middle">download</span>
+                            <button onclick="downloadRecordAsPDF('${record.id}')" class="text-green-600 hover:text-green-800 dark:text-green-400 dark:hover:text-green-300 transition-colors p-1 rounded hover:bg-green-50 dark:hover:bg-green-900/20" title="Download as PDF">
+                                <span class="material-symbols-outlined align-middle">picture_as_pdf</span>
                             </button>
                             <button onclick="deleteRecord('${record.id}')" class="text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300 transition-colors p-1 rounded hover:bg-red-50 dark:hover:bg-red-900/20" title="Delete">
                                 <span class="material-symbols-outlined align-middle">delete</span>
@@ -1652,34 +1652,74 @@
             }
         }
         
-        function downloadRecord(recordId) {
+        // PDF Download function for single record
+        function downloadRecordAsPDF(recordId) {
             const records = JSON.parse(localStorage.getItem('attendanceRecords') || '[]');
             const record = records.find(r => r.id == recordId);
             
             if (record) {
-                const data = `ATTENDANCE RECORD\n\n` +
-                            `Student Name: ${record.studentName}\n` +
-                            `Matric Number: ${record.matricNumber}\n` +
-                            `Course: ${record.courseCode}\n` +
-                            `Date: ${record.date}\n` +
-                            `Time: ${record.time}\n` +
-                            `Latitude: ${record.latitude}\n` +
-                            `Longitude: ${record.longitude}\n` +
-                            `Device Type: ${record.deviceType || 'Unknown'}\n` +
-                            `Submitted From: ${record.submittedFrom || 'Unknown device'}\n\n` +
-                            `Downloaded on: ${new Date().toLocaleString()}\n` +
-                            `Downloaded by: ${currentUser.fullName} (${currentUser.role})`;
-                
-                const blob = new Blob([data], { type: 'text/plain' });
-                const url = window.URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = `attendance_${record.matricNumber}_${record.date}_${record.time.replace(/:/g, '-')}.txt`;
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-                window.URL.revokeObjectURL(url);
-                showFlashMessage('Record downloaded successfully!', 'success');
+                try {
+                    // Create a new jsPDF instance
+                    const { jsPDF } = window.jspdf;
+                    const doc = new jsPDF();
+                    
+                    // Add title
+                    doc.setFontSize(20);
+                    doc.setTextColor(15, 27, 61); // Primary color
+                    doc.text('ATTENDANCE RECORD', 105, 20, { align: 'center' });
+                    
+                    // Add NSUK header
+                    doc.setFontSize(12);
+                    doc.setTextColor(100);
+                    doc.text('Nasarawa State University, Keffi', 105, 30, { align: 'center' });
+                    doc.text('Department of Urban and Regional Planning', 105, 36, { align: 'center' });
+                    
+                    // Add line
+                    doc.setDrawColor(15, 27, 61);
+                    doc.setLineWidth(0.5);
+                    doc.line(20, 42, 190, 42);
+                    
+                    // Add record details
+                    doc.setFontSize(11);
+                    doc.setTextColor(50);
+                    
+                    const details = [
+                        ['Student Name:', record.studentName],
+                        ['Matric Number:', record.matricNumber],
+                        ['Course Code:', record.courseCode],
+                        ['Date:', record.date],
+                        ['Time:', record.time],
+                        ['Location:', `${record.latitude.toFixed(6)}, ${record.longitude.toFixed(6)}`],
+                        ['Device Type:', record.deviceType || 'Unknown'],
+                        ['Submitted From:', record.submittedFrom ? record.submittedFrom.substring(0, 50) + '...' : 'Unknown']
+                    ];
+                    
+                    let y = 55;
+                    details.forEach(([label, value]) => {
+                        doc.setFont(undefined, 'bold');
+                        doc.text(label, 25, y);
+                        doc.setFont(undefined, 'normal');
+                        doc.text(value.toString(), 60, y);
+                        y += 8;
+                    });
+                    
+                    // Add timestamp
+                    doc.setFontSize(9);
+                    doc.setTextColor(150);
+                    doc.text(`Downloaded on: ${new Date().toLocaleString()}`, 105, 250, { align: 'center' });
+                    doc.text(`Downloaded by: ${currentUser.fullName} (${currentUser.role})`, 105, 256, { align: 'center' });
+                    
+                    // Generate filename
+                    const filename = `attendance_${record.matricNumber}_${record.date}_${record.time.replace(/:/g, '-')}.pdf`;
+                    
+                    // Save the PDF
+                    doc.save(filename);
+                    
+                    showFlashMessage('Record downloaded as PDF successfully!', 'success');
+                } catch (error) {
+                    console.error('PDF generation error:', error);
+                    showFlashMessage('Error generating PDF. Please try again.', 'error');
+                }
             }
         }
         
@@ -1709,103 +1749,153 @@
                 return;
             }
             
-            // Group by course and date
-            const courseSummary = {};
-            records.forEach(record => {
-                const key = `${record.courseCode}_${record.date}`;
-                if (!courseSummary[key]) {
-                    courseSummary[key] = {
-                        course: record.courseCode,
-                        date: record.date,
-                        total: 0,
-                        students: new Set(),
-                        mobileCount: 0,
-                        desktopCount: 0
-                    };
-                }
-                courseSummary[key].total++;
-                courseSummary[key].students.add(record.studentName);
-                if (record.deviceType === 'Mobile') {
-                    courseSummary[key].mobileCount++;
-                } else if (record.deviceType === 'Desktop') {
-                    courseSummary[key].desktopCount++;
-                }
-            });
-            
-            let report = 'ATTENDANCE REPORT\n';
-            report += 'Generated: ' + new Date().toLocaleString() + '\n';
-            report += 'Generated by: ' + currentUser.fullName + '\n';
-            report += 'Total Records: ' + records.length + '\n\n';
-            report += 'By Course and Date:\n';
-            
-            for (const [key, data] of Object.entries(courseSummary)) {
-                report += `  ${data.course} - ${data.date}:\n`;
-                report += `    Total: ${data.total} attendance(s)\n`;
-                report += `    Unique Students: ${data.students.size}\n`;
-                report += `    Mobile Submissions: ${data.mobileCount}\n`;
-                report += `    Desktop Submissions: ${data.desktopCount}\n`;
-            }
-            
-            alert(report);
-            showFlashMessage('Report generated successfully!', 'success');
-        }
-        
-        // New function: Export data as PDF using jsPDF
-        function exportDataAsPDF() {
-            const records = JSON.parse(localStorage.getItem('attendanceRecords') || '[]');
-            
-            if (records.length === 0) {
-                showFlashMessage('No records to export', 'error');
-                return;
-            }
-
-            // Create a new jsPDF instance
-            const { jsPDF } = window.jspdf;
-            const doc = new jsPDF();
-            
-            // Add title
-            doc.setFontSize(16);
-            doc.text('NSUK URP Attendance Report', 14, 20);
-            doc.setFontSize(10);
-            doc.text(`Generated: ${new Date().toLocaleString()}`, 14, 28);
-            doc.text(`Generated by: ${currentUser.fullName} (${currentUser.role})`, 14, 34);
-            doc.text(`Total Records: ${records.length}`, 14, 40);
-
-            // Prepare table data
-            const tableColumn = ["Student Name", "Matric No.", "Course", "Date", "Time", "Location"];
-            const tableRows = [];
-            
-            records.slice(0, 50).forEach(record => { // Limit to 50 records for performance
-                const recordData = [
+            try {
+                // Create a new jsPDF instance
+                const { jsPDF } = window.jspdf;
+                const doc = new jsPDF();
+                
+                // Add title
+                doc.setFontSize(20);
+                doc.setTextColor(15, 27, 61);
+                doc.text('ATTENDANCE REPORT', 105, 20, { align: 'center' });
+                
+                // Add metadata
+                doc.setFontSize(10);
+                doc.setTextColor(100);
+                doc.text(`Generated: ${new Date().toLocaleString()}`, 105, 30, { align: 'center' });
+                doc.text(`Generated by: ${currentUser.fullName} (${currentUser.role})`, 105, 36, { align: 'center' });
+                doc.text(`Total Records: ${records.length}`, 105, 42, { align: 'center' });
+                
+                // Group by course and date
+                const courseSummary = {};
+                records.forEach(record => {
+                    const key = `${record.courseCode}_${record.date}`;
+                    if (!courseSummary[key]) {
+                        courseSummary[key] = {
+                            course: record.courseCode,
+                            date: record.date,
+                            total: 0,
+                            students: new Set(),
+                            mobileCount: 0,
+                            desktopCount: 0
+                        };
+                    }
+                    courseSummary[key].total++;
+                    courseSummary[key].students.add(record.studentName);
+                    if (record.deviceType === 'Mobile') {
+                        courseSummary[key].mobileCount++;
+                    } else if (record.deviceType === 'Desktop') {
+                        courseSummary[key].desktopCount++;
+                    }
+                });
+                
+                // Prepare data for table
+                const tableData = Object.values(courseSummary).map(data => [
+                    data.course,
+                    data.date,
+                    data.total,
+                    data.students.size,
+                    data.mobileCount,
+                    data.desktopCount
+                ]);
+                
+                // Add table
+                doc.autoTable({
+                    head: [['Course', 'Date', 'Total', 'Unique Students', 'Mobile', 'Desktop']],
+                    body: tableData,
+                    startY: 50,
+                    theme: 'striped',
+                    headStyles: {
+                        fillColor: [15, 27, 61],
+                        textColor: 255,
+                        fontStyle: 'bold'
+                    },
+                    alternateRowStyles: {
+                        fillColor: [245, 245, 245]
+                    }
+                });
+                
+                // Add recent records section
+                const finalY = doc.lastAutoTable.finalY + 10;
+                doc.setFontSize(14);
+                doc.setTextColor(15, 27, 61);
+                doc.text('Recent Attendance Records', 14, finalY);
+                
+                // Get recent records for table
+                const recentRecords = records.slice(0, 20).map(record => [
                     record.studentName,
                     record.matricNumber,
                     record.courseCode,
                     record.date,
                     record.time,
-                    `${record.latitude.toFixed(4)}, ${record.longitude.toFixed(4)}`
-                ];
-                tableRows.push(recordData);
-            });
-
-            // Add table using autoTable plugin
-            doc.autoTable({
-                head: [tableColumn],
-                body: tableRows,
-                startY: 45,
-                theme: 'striped',
-                styles: { fontSize: 8 },
-                headStyles: { fillColor: [15, 27, 61] } // primary color
-            });
-
-            // Save the PDF
-            doc.save(`attendance_report_${new Date().toISOString().split('T')[0]}.pdf`);
-            
-            showFlashMessage('PDF exported successfully!', 'success');
+                    record.deviceType || 'Unknown'
+                ]);
+                
+                doc.autoTable({
+                    head: [['Student', 'Matric', 'Course', 'Date', 'Time', 'Device']],
+                    body: recentRecords,
+                    startY: finalY + 5,
+                    theme: 'striped',
+                    headStyles: {
+                        fillColor: [15, 27, 61],
+                        textColor: 255
+                    },
+                    styles: {
+                        fontSize: 9,
+                        cellPadding: 3
+                    }
+                });
+                
+                // Save the PDF
+                doc.save(`attendance_report_${new Date().toISOString().split('T')[0]}.pdf`);
+                
+                showFlashMessage('Report generated as PDF successfully!', 'success');
+            } catch (error) {
+                console.error('PDF generation error:', error);
+                // Fallback to alert
+                let report = 'ATTENDANCE REPORT\n';
+                report += 'Generated: ' + new Date().toLocaleString() + '\n';
+                report += 'Generated by: ' + currentUser.fullName + '\n';
+                report += 'Total Records: ' + records.length + '\n\n';
+                report += 'By Course and Date:\n';
+                
+                // Group by course and date
+                const courseSummary = {};
+                records.forEach(record => {
+                    const key = `${record.courseCode}_${record.date}`;
+                    if (!courseSummary[key]) {
+                        courseSummary[key] = {
+                            course: record.courseCode,
+                            date: record.date,
+                            total: 0,
+                            students: new Set(),
+                            mobileCount: 0,
+                            desktopCount: 0
+                        };
+                    }
+                    courseSummary[key].total++;
+                    courseSummary[key].students.add(record.studentName);
+                    if (record.deviceType === 'Mobile') {
+                        courseSummary[key].mobileCount++;
+                    } else if (record.deviceType === 'Desktop') {
+                        courseSummary[key].desktopCount++;
+                    }
+                });
+                
+                for (const [key, data] of Object.entries(courseSummary)) {
+                    report += `  ${data.course} - ${data.date}:\n`;
+                    report += `    Total: ${data.total} attendance(s)\n`;
+                    report += `    Unique Students: ${data.students.size}\n`;
+                    report += `    Mobile Submissions: ${data.mobileCount}\n`;
+                    report += `    Desktop Submissions: ${data.desktopCount}\n`;
+                }
+                
+                alert(report);
+                showFlashMessage('Report generated (text format) successfully!', 'success');
+            }
         }
-
-        // Keep original exportData function for CSV export if needed, but we'll rename the button action to PDF
+        
         function exportData() {
-            // This function is kept for backward compatibility but not used by the new PDF button
             const records = JSON.parse(localStorage.getItem('attendanceRecords') || '[]');
             
             if (records.length === 0) {
