@@ -1408,6 +1408,14 @@
                         </p>
                     </div>
                 `).join('');
+            } else {
+                recentAttendance.innerHTML = `
+                    <div class="text-center py-8">
+                        <span class="material-symbols-outlined text-4xl text-slate-400 mb-4">history</span>
+                        <p class="text-slate-500 dark:text-slate-400">No attendance records yet</p>
+                        <p class="text-sm text-slate-500 dark:text-slate-500 mt-2">Submit your first attendance above</p>
+                    </div>
+                `;
             }
             
             resetStudentForm();
@@ -1705,14 +1713,20 @@
             
             // Reset pagination
             currentPage = 1;
-            currentFilter = 'all';
+            currentFilter = document.getElementById('courseFilter').value;
             
-            // Apply initial filter
-            filterAttendanceByCourse('all', allRecords);
+            // Apply filter
+            if (currentFilter === 'all') {
+                filteredRecords = [...allRecords];
+            } else {
+                filteredRecords = allRecords.filter(record => record.courseCode === currentFilter);
+            }
+            
+            renderAttendanceTable();
         }
         
-        function filterAttendanceByCourse(courseCode = null) {
-            const filterValue = courseCode || document.getElementById('courseFilter').value;
+        function filterAttendanceByCourse() {
+            const filterValue = document.getElementById('courseFilter').value;
             const allRecords = JSON.parse(localStorage.getItem('attendanceRecords') || '[]');
             
             // Sort records by timestamp (newest first)
@@ -1738,16 +1752,16 @@
             const nextBtn = document.getElementById('nextBtn');
             
             if (filteredRecords.length === 0) {
-                noSubmittedRecords.style.display = '';
-                submittedAttendance.innerHTML = '';
-                attendanceCount.textContent = 'Showing 0 records';
-                pageInfo.textContent = 'Page 1 of 1';
-                prevBtn.disabled = true;
-                nextBtn.disabled = true;
+                if (noSubmittedRecords) noSubmittedRecords.style.display = '';
+                if (submittedAttendance) submittedAttendance.innerHTML = '';
+                if (attendanceCount) attendanceCount.textContent = 'Showing 0 records';
+                if (pageInfo) pageInfo.textContent = 'Page 1 of 1';
+                if (prevBtn) prevBtn.disabled = true;
+                if (nextBtn) nextBtn.disabled = true;
                 return;
             }
             
-            noSubmittedRecords.style.display = 'none';
+            if (noSubmittedRecords) noSubmittedRecords.style.display = 'none';
             
             // Calculate pagination
             const totalPages = Math.ceil(filteredRecords.length / recordsPerPage);
@@ -2363,6 +2377,14 @@
                         </div>
                     </div>
                 `).join('');
+            } else {
+                lecturerApprovalsList.innerHTML = `
+                    <div class="text-center py-8">
+                        <span class="material-symbols-outlined text-4xl text-slate-400 dark:text-slate-500 mb-3">check_circle</span>
+                        <p class="text-slate-500 dark:text-slate-400">No pending lecturer approvals</p>
+                        <p class="text-sm text-slate-400 dark:text-slate-500 mt-1">All lecturers are approved</p>
+                    </div>
+                `;
             }
         }
         
