@@ -956,29 +956,64 @@
                     // Store the last cloud timestamp
                     localStorage.setItem('lastCloudSync', data.record.timestamp || Date.now());
                     
-                    // Merge local and remote data - improved algorithm
+                    // IMPROVED MERGE ALGORITHM - Better handling of user data
                     const localUsers = JSON.parse(localStorage.getItem('users') || '[]');
                     const remoteUsers = data.record.users || [];
                     
-                    // Merge users by ID, preferring newer data
+                    // Create maps for better merging
                     const userMap = new Map();
-                    localUsers.forEach(user => userMap.set(user.id, user));
-                    remoteUsers.forEach(user => {
-                        const existingUser = userMap.get(user.id);
-                        if (!existingUser || (user.createdAt && existingUser.createdAt && new Date(user.createdAt) > new Date(existingUser.createdAt))) {
-                            userMap.set(user.id, user);
+                    
+                    // Add local users first
+                    localUsers.forEach(user => {
+                        userMap.set(user.id, {
+                            ...user,
+                            _source: 'local',
+                            _timestamp: user.updatedAt || user.createdAt || 0
+                        });
+                    });
+                    
+                    // Merge with remote users, preferring the one with later timestamp
+                    remoteUsers.forEach(remoteUser => {
+                        const existingUser = userMap.get(remoteUser.id);
+                        const remoteTimestamp = remoteUser.updatedAt || remoteUser.createdAt || 0;
+                        
+                        if (!existingUser) {
+                            userMap.set(remoteUser.id, {
+                                ...remoteUser,
+                                _source: 'remote'
+                            });
+                        } else {
+                            const localTimestamp = existingUser._timestamp;
+                            if (remoteTimestamp > localTimestamp) {
+                                userMap.set(remoteUser.id, {
+                                    ...remoteUser,
+                                    _source: 'remote'
+                                });
+                            }
                         }
                     });
                     
-                    const mergedUsers = Array.from(userMap.values());
+                    // Convert back to array and clean up _source and _timestamp
+                    const mergedUsers = Array.from(userMap.values()).map(user => {
+                        const { _source, _timestamp, ...cleanUser } = user;
+                        return cleanUser;
+                    });
                     
                     // Merge attendance records by ID
                     const localAttendance = JSON.parse(localStorage.getItem('attendanceRecords') || '[]');
                     const remoteAttendance = data.record.attendance || [];
                     
                     const attendanceMap = new Map();
-                    localAttendance.forEach(record => attendanceMap.set(record.id, record));
-                    remoteAttendance.forEach(record => attendanceMap.set(record.id, record));
+                    
+                    // Add local attendance
+                    localAttendance.forEach(record => {
+                        attendanceMap.set(record.id, record);
+                    });
+                    
+                    // Add remote attendance (overwrites local if same ID)
+                    remoteAttendance.forEach(record => {
+                        attendanceMap.set(record.id, record);
+                    });
                     
                     const mergedAttendance = Array.from(attendanceMap.values());
                     
@@ -997,11 +1032,19 @@
                         attendance: mergedAttendance.length
                     });
                     
-                    // Update current user if logged in
+                    // Update current user if logged in - IMPROVED: Also update if user exists with different data
                     if (currentUser) {
                         const updatedUser = mergedUsers.find(u => u.id === currentUser.id);
-                        if (updatedUser && updatedUser.password === currentUser.password) {
-                            currentUser = updatedUser;
+                        if (updatedUser) {
+                            // Keep the password from current session if it matches
+                            if (updatedUser.password === currentUser.password) {
+                                currentUser = updatedUser;
+                            } else {
+                                // Password changed? This might indicate an issue
+                                console.warn('Password mismatch for user', currentUser.id);
+                                // Still update other fields but keep current password
+                                currentUser = { ...updatedUser, password: currentUser.password };
+                            }
                             localStorage.setItem('currentUser', JSON.stringify(currentUser));
                         }
                     }
@@ -1022,10 +1065,46 @@
             }
         }
         
+        // Improved syncData function that ensures bidirectional sync
+        async function syncData(force = false) {
+            if (!navigator.onLine) {
+                console.log('Offline: Cannot sync');
+                return false;
+            }
+            
+            if (isSyncing) {
+                console.log('Sync already in progress');
+                return false;
+            }
+            
+            try {
+                // First pull from cloud to get latest data
+                const pullSuccess = await syncFromCloud();
+                
+                // Then push local changes to cloud
+                const pushSuccess = await syncToCloud();
+                
+                // If we're in lecturer dashboard, refresh the table
+                if (currentUser && currentUser.role === 'lecturer' && document.getElementById('lecturerDashboardView').classList.contains('active')) {
+                    await refreshAttendanceTable();
+                }
+                
+                // If we're in student dashboard, refresh recent attendance
+                if (currentUser && currentUser.role === 'student' && document.getElementById('studentDashboardView').classList.contains('active')) {
+                    loadStudentDashboard();
+                }
+                
+                return pullSuccess && pushSuccess;
+            } catch (error) {
+                console.error('Sync error:', error);
+                return false;
+            }
+        }
+        
         // Force cloud sync (manual trigger)
         async function forceCloudSync() {
             showFlashMessage('Syncing with cloud...', 'info');
-            const syncSuccess = await syncData(true);
+            const syncSuccess = await syncData();
             if (syncSuccess) {
                 showFlashMessage('Sync completed successfully!', 'success');
             } else {
@@ -1071,30 +1150,6 @@
             parent.appendChild(indicator);
         }
         
-        // Real-time sync functions
-        async function syncData(force = false) {
-            if (navigator.onLine) {
-                try {
-                    // First pull from cloud
-                    await syncFromCloud();
-                    
-                    // Then push to cloud
-                    await syncToCloud();
-                    
-                    // If we're in lecturer dashboard, refresh the table
-                    if (currentUser && currentUser.role === 'lecturer' && document.getElementById('lecturerDashboardView').classList.contains('active')) {
-                        await refreshAttendanceTable();
-                    }
-                    
-                    return true;
-                } catch (error) {
-                    console.error('Sync error:', error);
-                    return false;
-                }
-            }
-            return false;
-        }
-        
         function updateLastSyncTime() {
             const now = new Date();
             const diffMs = now - lastSyncTime;
@@ -1130,7 +1185,7 @@
                     if (navigator.onLine) {
                         await syncData();
                     }
-                }, 15000); // Sync every 15 seconds (faster for better cross-device visibility)
+                }, 10000); // Sync every 10 seconds for better real-time sync
                 
                 console.log('Auto-refresh started');
             }
@@ -1227,16 +1282,20 @@
             }
         }
         
-        // Authentication functions
+        // Authentication functions - IMPROVED with better sync
         async function login(username, password) {
             console.log('Login attempt for:', username);
             
-            // First sync from cloud to get latest users
+            // First sync from cloud to get latest users - IMPORTANT: Wait for this to complete
             if (navigator.onLine) {
+                showFlashMessage('Syncing user data from cloud...', 'info');
                 await syncFromCloud();
             }
             
             const users = JSON.parse(localStorage.getItem('users') || '[]');
+            console.log('Total users after sync:', users.length);
+            
+            // Find user by username OR matric number
             const user = users.find(u => u.username === username || u.matricNumber === username);
             
             if (user && user.password === password) {
@@ -1250,7 +1309,7 @@
                 localStorage.setItem('currentUser', JSON.stringify(user));
                 console.log('User logged in:', user.role);
                 
-                // Sync data after login
+                // Sync data after login to get any new attendance records
                 setTimeout(async () => {
                     await syncData();
                 }, 1000);
@@ -1304,22 +1363,31 @@
             
             const users = JSON.parse(localStorage.getItem('users') || '[]');
             
+            // Check if username already exists
             if (users.find(u => u.username === userData.username)) {
                 showFlashMessage('Username already exists', 'error');
                 return false;
             }
             
+            // Check if matric number already exists for students
             if (userData.role === 'student' && users.find(u => u.matricNumber === userData.matricNumber)) {
                 showFlashMessage('Matric number already registered', 'error');
                 return false;
             }
             
+            // Add timestamps for better merge handling
+            userData.createdAt = new Date().toISOString();
+            userData.updatedAt = new Date().toISOString();
+            
             // Add the new user
             users.push(userData);
             localStorage.setItem('users', JSON.stringify(users));
             
-            currentUser = userData;
-            localStorage.setItem('currentUser', JSON.stringify(userData));
+            // Don't auto-login for lecturers (pending approval)
+            if (userData.role !== 'lecturer') {
+                currentUser = userData;
+                localStorage.setItem('currentUser', JSON.stringify(userData));
+            }
             
             // Sync to cloud after signup
             if (navigator.onLine) {
@@ -1333,7 +1401,7 @@
                 showFlashMessage('Account created locally. Please connect to internet to sync.', 'warning');
             }
             
-            // Auto-login after signup
+            // Auto-login or redirect after signup
             setTimeout(() => {
                 if (userData.role === 'lecturer') {
                     showFlashMessage('Your account is pending approval by administrator', 'info');
@@ -1369,13 +1437,18 @@
             }, 2000);
         }
         
-        // Student Dashboard Functions
-        function loadStudentDashboard() {
+        // Student Dashboard Functions - IMPROVED with cloud sync
+        async function loadStudentDashboard() {
             console.log('Loading student dashboard...');
             if (!currentUser || currentUser.role !== 'student') {
                 showFlashMessage('Access denied. Please login as student.', 'error');
                 showView('home');
                 return;
+            }
+            
+            // Sync from cloud to get latest attendance records
+            if (navigator.onLine) {
+                await syncFromCloud();
             }
             
             document.getElementById('studentName').textContent = `Welcome, ${currentUser.fullName}!`;
@@ -1404,7 +1477,7 @@
                         </p>
                         <p class="text-xs text-slate-500 dark:text-slate-500 mt-1">
                             <span class="material-symbols-outlined align-middle text-xs">cloud_sync</span>
-                            Cloud-synced
+                            ${record.synced ? 'Cloud-synced' : 'Pending sync'}
                         </p>
                     </div>
                 `).join('');
@@ -1620,18 +1693,28 @@
                 time: new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' }),
                 submittedFrom: navigator.userAgent,
                 deviceType: /Mobile|Android|iPhone|iPad|iPod/.test(navigator.userAgent) ? 'Mobile' : 'Desktop',
-                synced: false
+                synced: false,
+                createdAt: timestamp
             };
             
             records.push(attendanceRecord);
             localStorage.setItem('attendanceRecords', JSON.stringify(records));
             
-            // Sync to cloud after attendance submission
+            // Sync to cloud after attendance submission - IMPORTANT: Wait for sync to complete
             let syncSuccess = false;
             if (navigator.onLine) {
+                showFlashMessage('Syncing attendance to cloud...', 'info');
                 syncSuccess = await syncToCloud();
                 if (syncSuccess) {
+                    // Update the record to mark as synced
                     attendanceRecord.synced = true;
+                    // Update in localStorage
+                    const updatedRecords = JSON.parse(localStorage.getItem('attendanceRecords') || '[]');
+                    const recordIndex = updatedRecords.findIndex(r => r.id === recordId);
+                    if (recordIndex !== -1) {
+                        updatedRecords[recordIndex].synced = true;
+                        localStorage.setItem('attendanceRecords', JSON.stringify(updatedRecords));
+                    }
                     showFlashMessage(`Attendance submitted successfully! Course: ${courseCode} (Synced to cloud)`, 'success');
                 } else {
                     showFlashMessage(`Attendance submitted successfully! Course: ${courseCode} (Saved locally, will sync when online)`, 'warning');
@@ -2332,12 +2415,17 @@
         }
         
         // Admin Dashboard Functions
-        function loadAdminDashboard() {
+        async function loadAdminDashboard() {
             console.log('Loading admin dashboard...');
             if (!currentUser || currentUser.role !== 'admin') {
                 showFlashMessage('Access denied. Please login as administrator.', 'error');
                 showView('home');
                 return;
+            }
+            
+            // Sync from cloud to get latest user data
+            if (navigator.onLine) {
+                await syncFromCloud();
             }
             
             document.getElementById('adminName').textContent = `Welcome, ${currentUser.fullName}!`;
@@ -2398,6 +2486,7 @@
             
             if (userIndex !== -1) {
                 users[userIndex].isApproved = true;
+                users[userIndex].updatedAt = new Date().toISOString();
                 localStorage.setItem('users', JSON.stringify(users));
                 
                 // Sync to cloud after approval
@@ -2620,9 +2709,11 @@
             console.log('DOM loaded, initializing...');
             initializeTheme();
             
-            // Initialize sync
+            // Initialize sync - but don't wait for it
             setTimeout(async () => {
-                await syncFromCloud();
+                if (navigator.onLine) {
+                    await syncFromCloud();
+                }
             }, 1000);
             
             // Check for existing user session
@@ -2700,7 +2791,8 @@
                         fullName: fullName,
                         matricNumber: role === 'student' ? matricNumber : null,
                         isApproved: role !== 'lecturer',
-                        createdAt: new Date().toISOString()
+                        createdAt: new Date().toISOString(),
+                        updatedAt: new Date().toISOString()
                     };
                     
                     signup(userData);
