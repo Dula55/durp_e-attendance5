@@ -1165,7 +1165,7 @@
                         sessions: Object.keys(mergedSessions).length
                     });
                     
-                    // Update current user if logged in - IMPROVED: Also update if user exists with different data
+                    // Update current user if logged in
                     if (currentUser) {
                         const updatedUser = mergedUsers.find(u => u.id === currentUser.id);
                         if (updatedUser) {
@@ -1600,16 +1600,15 @@
             users.push(userData);
             localStorage.setItem('users', JSON.stringify(users));
             
-            // Don't auto-login for lecturers (pending approval)
-            if (userData.role !== 'lecturer') {
-                // Auto-login after signup
-                await login(userData.username, userData.password);
-            }
-            
-            // Sync to cloud after signup
+            // IMPORTANT FIX: Sync to cloud immediately after signup and wait for completion
+            let syncSuccess = false;
             if (navigator.onLine) {
-                const syncSuccess = await syncToCloud();
+                showFlashMessage('Syncing account to cloud...', 'info');
+                syncSuccess = await syncToCloud();
+                
+                // Double sync to ensure data is propagated
                 if (syncSuccess) {
+                    await syncToCloud(); // Second sync for redundancy
                     showFlashMessage('Account created and synced to cloud successfully!', 'success');
                 } else {
                     showFlashMessage('Account created locally. Will sync when online.', 'warning');
@@ -1618,8 +1617,14 @@
                 showFlashMessage('Account created locally. Please connect to internet to sync.', 'warning');
             }
             
-            // Auto-login or redirect after signup
-            if (userData.role === 'lecturer') {
+            // Auto-login after signup (except for lecturers)
+            if (userData.role !== 'lecturer') {
+                // Small delay to ensure sync is complete
+                setTimeout(async () => {
+                    await login(userData.username, userData.password);
+                }, 1000);
+            } else {
+                // For lecturers, redirect to login with message
                 setTimeout(() => {
                     showFlashMessage('Your account is pending approval by administrator', 'info');
                     showView('login');
@@ -1914,7 +1919,7 @@
             records.push(attendanceRecord);
             localStorage.setItem('attendanceRecords', JSON.stringify(records));
             
-            // Sync to cloud after attendance submission - IMPORTANT: Wait for sync to complete
+            // Sync to cloud after attendance submission
             let syncSuccess = false;
             if (navigator.onLine) {
                 showFlashMessage('Syncing attendance to cloud...', 'info');
