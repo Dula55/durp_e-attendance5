@@ -99,6 +99,10 @@
                     
                     <div id="userInfo" class="hidden flex items-center space-x-3">
                         <span id="userRole" class="text-sm text-slate-700 dark:text-slate-300"></span>
+                        <span id="deviceIndicator" class="hidden md:inline-flex items-center text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300 px-2 py-1 rounded-full">
+                            <span class="material-symbols-outlined text-xs mr-1">devices</span>
+                            <span id="deviceCount">1</span> device(s)
+                        </span>
                         <a href="#" onclick="logout()" class="bg-primary hover:bg-primary-hover text-white px-4 py-2 rounded-lg text-sm font-semibold transition-colors">Logout</a>
                     </div>
                     
@@ -550,6 +554,13 @@
                                 </div>
                             </div>
                             <div class="flex items-center space-x-3">
+                                <span class="material-symbols-outlined text-slate-400">devices</span>
+                                <div>
+                                    <p class="text-sm text-slate-600 dark:text-slate-400">Active Devices</p>
+                                    <p id="studentDeviceCount" class="font-medium text-green-600 dark:text-green-400">1 device</p>
+                                </div>
+                            </div>
+                            <div class="flex items-center space-x-3">
                                 <span class="material-symbols-outlined text-slate-400">cloud_sync</span>
                                 <div>
                                     <p class="text-sm text-slate-600 dark:text-slate-400">Sync Status</p>
@@ -863,8 +874,112 @@
         let lastSyncTime = new Date();
         let isSyncing = false;
         
+        // Session management - Track active devices
+        let sessionId = null;
+        let activeSessions = {};
+        
         // Set current year in footer
         document.getElementById('currentYear').textContent = new Date().getFullYear();
+        
+        // Generate a unique session ID for this device
+        function generateSessionId() {
+            return 'session_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+        }
+        
+        // Get device info
+        function getDeviceInfo() {
+            const ua = navigator.userAgent;
+            let deviceType = 'Desktop';
+            let deviceName = 'Unknown';
+            
+            if (/Mobile|Android|iPhone|iPad|iPod/.test(ua)) {
+                deviceType = 'Mobile';
+                if (/iPhone/.test(ua)) deviceName = 'iPhone';
+                else if (/iPad/.test(ua)) deviceName = 'iPad';
+                else if (/Android/.test(ua)) deviceName = 'Android';
+                else deviceName = 'Mobile Device';
+            } else {
+                if (/Windows/.test(ua)) deviceName = 'Windows PC';
+                else if (/Mac/.test(ua)) deviceName = 'Mac';
+                else if (/Linux/.test(ua)) deviceName = 'Linux PC';
+                else deviceName = 'Desktop';
+            }
+            
+            return {
+                type: deviceType,
+                name: deviceName,
+                userAgent: ua,
+                screen: `${window.screen.width}x${window.screen.height}`,
+                timestamp: Date.now()
+            };
+        }
+        
+        // Update device count indicator
+        function updateDeviceCount() {
+            const deviceIndicator = document.getElementById('deviceIndicator');
+            const studentDeviceCount = document.getElementById('studentDeviceCount');
+            
+            if (!currentUser) return;
+            
+            const count = Object.keys(activeSessions).length;
+            
+            if (deviceIndicator) {
+                deviceIndicator.classList.remove('hidden');
+                document.getElementById('deviceCount').textContent = count;
+            }
+            
+            if (studentDeviceCount) {
+                studentDeviceCount.textContent = count === 1 ? '1 device' : `${count} devices`;
+            }
+        }
+        
+        // Sync session state to cloud
+        async function syncSessionState() {
+            if (!currentUser || !navigator.onLine) return;
+            
+            const deviceInfo = getDeviceInfo();
+            
+            // Add or update this session
+            activeSessions[sessionId] = {
+                deviceInfo: deviceInfo,
+                lastActive: Date.now(),
+                userId: currentUser.id
+            };
+            
+            // Clean up stale sessions (older than 5 minutes)
+            const now = Date.now();
+            Object.keys(activeSessions).forEach(id => {
+                if (now - activeSessions[id].lastActive > 300000) { // 5 minutes
+                    delete activeSessions[id];
+                }
+            });
+            
+            // Store session data in a separate cloud bin or as part of user data
+            const sessionData = {
+                sessions: activeSessions,
+                timestamp: now
+            };
+            
+            // We'll store this in localStorage and sync as part of user data
+            localStorage.setItem('activeSessions', JSON.stringify(sessionData));
+            
+            // Also store in user's metadata
+            const users = JSON.parse(localStorage.getItem('users') || '[]');
+            const userIndex = users.findIndex(u => u.id === currentUser.id);
+            if (userIndex !== -1) {
+                users[userIndex].lastActive = now;
+                users[userIndex].lastDevice = deviceInfo;
+                users[userIndex].activeSessions = users[userIndex].activeSessions || {};
+                users[userIndex].activeSessions[sessionId] = {
+                    deviceInfo: deviceInfo,
+                    lastActive: now
+                };
+                localStorage.setItem('users', JSON.stringify(users));
+            }
+            
+            await syncToCloud();
+            updateDeviceCount();
+        }
         
         // Enhanced Remote Storage Functions
         async function syncToCloud() {
@@ -884,10 +999,12 @@
             
             const users = JSON.parse(localStorage.getItem('users') || '[]');
             const attendance = JSON.parse(localStorage.getItem('attendanceRecords') || '[]');
+            const sessions = JSON.parse(localStorage.getItem('activeSessions') || '{}');
             
             const data = {
                 users: users,
                 attendance: attendance,
+                sessions: sessions,
                 timestamp: Date.now(),
                 syncDevice: navigator.userAgent,
                 syncTime: new Date().toISOString()
@@ -1020,16 +1137,32 @@
                     // Sort attendance by timestamp (newest first)
                     mergedAttendance.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
                     
+                    // Merge session data
+                    const localSessions = JSON.parse(localStorage.getItem('activeSessions') || '{}');
+                    const remoteSessions = data.record.sessions || {};
+                    
+                    // Merge sessions, preferring newer timestamps
+                    const mergedSessions = { ...localSessions };
+                    
+                    Object.keys(remoteSessions).forEach(sessionId => {
+                        if (!mergedSessions[sessionId] || 
+                            remoteSessions[sessionId].lastActive > mergedSessions[sessionId].lastActive) {
+                            mergedSessions[sessionId] = remoteSessions[sessionId];
+                        }
+                    });
+                    
                     // Save merged data
                     localStorage.setItem('users', JSON.stringify(mergedUsers));
                     localStorage.setItem('attendanceRecords', JSON.stringify(mergedAttendance));
+                    localStorage.setItem('activeSessions', JSON.stringify(mergedSessions));
                     
                     lastSyncTime = new Date();
                     updateLastSyncTime();
                     
                     console.log('Data loaded from cloud:', {
                         users: mergedUsers.length,
-                        attendance: mergedAttendance.length
+                        attendance: mergedAttendance.length,
+                        sessions: Object.keys(mergedSessions).length
                     });
                     
                     // Update current user if logged in - IMPROVED: Also update if user exists with different data
@@ -1047,6 +1180,21 @@
                             }
                             localStorage.setItem('currentUser', JSON.stringify(currentUser));
                         }
+                        
+                        // Update active sessions from merged data
+                        activeSessions = mergedSessions;
+                        
+                        // Check if this session was logged out from another device
+                        if (!activeSessions[sessionId] && currentUser) {
+                            console.log('Session terminated from another device');
+                            showFlashMessage('You have been logged out from another device', 'warning');
+                            logout();
+                            return false;
+                        }
+                        
+                        // Refresh session state
+                        await syncSessionState();
+                        updateDeviceCount();
                     }
                     
                     showSyncIndicator('synced');
@@ -1282,7 +1430,7 @@
             }
         }
         
-        // Authentication functions - IMPROVED with better sync
+        // Authentication functions - IMPROVED with better sync and session management
         async function login(username, password) {
             console.log('Login attempt for:', username);
             
@@ -1305,13 +1453,54 @@
                     return false;
                 }
                 
-                currentUser = user;
-                localStorage.setItem('currentUser', JSON.stringify(user));
-                console.log('User logged in:', user.role);
+                // Generate session ID for this device
+                sessionId = generateSessionId();
+                const deviceInfo = getDeviceInfo();
                 
-                // Sync data after login to get any new attendance records
+                // Initialize active sessions
+                activeSessions = JSON.parse(localStorage.getItem('activeSessions') || '{}');
+                
+                // Add this session
+                activeSessions[sessionId] = {
+                    deviceInfo: deviceInfo,
+                    lastActive: Date.now(),
+                    userId: user.id
+                };
+                
+                // Clean up stale sessions for this user
+                const now = Date.now();
+                Object.keys(activeSessions).forEach(id => {
+                    if (activeSessions[id].userId === user.id && 
+                        now - activeSessions[id].lastActive > 300000) { // 5 minutes
+                        delete activeSessions[id];
+                    }
+                });
+                
+                localStorage.setItem('activeSessions', JSON.stringify(activeSessions));
+                
+                currentUser = {
+                    ...user,
+                    sessionId: sessionId,
+                    deviceInfo: deviceInfo,
+                    loginTime: now
+                };
+                
+                localStorage.setItem('currentUser', JSON.stringify(currentUser));
+                console.log('User logged in:', user.role, 'Session:', sessionId);
+                
+                // Update user's last active and device info
+                const userIndex = users.findIndex(u => u.id === user.id);
+                if (userIndex !== -1) {
+                    users[userIndex].lastActive = now;
+                    users[userIndex].lastDevice = deviceInfo;
+                    users[userIndex].activeSessions = activeSessions;
+                    localStorage.setItem('users', JSON.stringify(users));
+                }
+                
+                // Sync data after login to get any new attendance records and update session info
                 setTimeout(async () => {
                     await syncData();
+                    updateDeviceCount();
                 }, 1000);
                 
                 // Redirect to appropriate dashboard
@@ -1330,9 +1519,17 @@
                         dashboardView = 'home';
                 }
                 
-                showFlashMessage('Login successful! Redirecting to dashboard...', 'success');
+                showFlashMessage(`Login successful! Welcome from ${deviceInfo.name}`, 'success');
                 console.log('Redirecting to:', dashboardView);
                 showView(dashboardView);
+                
+                // Start periodic session updates
+                setInterval(async () => {
+                    if (currentUser) {
+                        await syncSessionState();
+                    }
+                }, 30000); // Update every 30 seconds
+                
                 return true;
             } else {
                 showFlashMessage('Invalid username or password', 'error');
@@ -1341,6 +1538,25 @@
         }
         
         function logout() {
+            // Remove this session from active sessions
+            if (sessionId && activeSessions[sessionId]) {
+                delete activeSessions[sessionId];
+                localStorage.setItem('activeSessions', JSON.stringify(activeSessions));
+                
+                // Update user's active sessions
+                const users = JSON.parse(localStorage.getItem('users') || '[]');
+                const userIndex = users.findIndex(u => u.id === currentUser?.id);
+                if (userIndex !== -1) {
+                    users[userIndex].activeSessions = activeSessions;
+                    localStorage.setItem('users', JSON.stringify(users));
+                }
+                
+                // Sync to cloud
+                if (navigator.onLine) {
+                    syncToCloud();
+                }
+            }
+            
             // Stop auto-refresh if running
             if (autoRefreshInterval) {
                 clearInterval(autoRefreshInterval);
@@ -1348,6 +1564,7 @@
             }
             
             currentUser = null;
+            sessionId = null;
             localStorage.removeItem('currentUser');
             showView('home');
             showFlashMessage('You have been logged out successfully.', 'success');
@@ -1385,8 +1602,8 @@
             
             // Don't auto-login for lecturers (pending approval)
             if (userData.role !== 'lecturer') {
-                currentUser = userData;
-                localStorage.setItem('currentUser', JSON.stringify(userData));
+                // Auto-login after signup
+                await login(userData.username, userData.password);
             }
             
             // Sync to cloud after signup
@@ -1402,27 +1619,12 @@
             }
             
             // Auto-login or redirect after signup
-            setTimeout(() => {
-                if (userData.role === 'lecturer') {
+            if (userData.role === 'lecturer') {
+                setTimeout(() => {
                     showFlashMessage('Your account is pending approval by administrator', 'info');
                     showView('login');
-                } else {
-                    // Redirect to appropriate dashboard
-                    let dashboardView = '';
-                    switch(userData.role) {
-                        case 'student':
-                            dashboardView = 'studentDashboard';
-                            break;
-                        case 'admin':
-                            dashboardView = 'adminDashboard';
-                            break;
-                        default:
-                            dashboardView = 'home';
-                    }
-                    console.log('Redirecting new user to:', dashboardView);
-                    showView(dashboardView);
-                }
-            }, 1500);
+                }, 1500);
+            }
             
             return true;
         }
@@ -1446,7 +1648,7 @@
                 return;
             }
             
-            // Sync from cloud to get latest attendance records
+            // Sync from cloud to get latest attendance records and session info
             if (navigator.onLine) {
                 await syncFromCloud();
             }
@@ -1457,13 +1659,20 @@
             document.getElementById('studentFullNameInput').value = currentUser.fullName;
             document.getElementById('studentMatricInput').value = currentUser.matricNumber;
             
+            // Update device count
+            updateDeviceCount();
+            
             const records = JSON.parse(localStorage.getItem('attendanceRecords') || '[]');
             const studentRecords = records.filter(r => r.studentId === currentUser.id);
             
             const recentAttendance = document.getElementById('recentAttendance');
             if (studentRecords.length > 0) {
-                recentAttendance.innerHTML = studentRecords.slice(0, 5).map(record => `
-                    <div class="border-l-4 border-primary pl-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-900/50 rounded-r-xl">
+                recentAttendance.innerHTML = studentRecords.slice(0, 5).map(record => {
+                    // Check if this record came from another device
+                    const fromOtherDevice = record.sessionId && record.sessionId !== sessionId;
+                    
+                    return `
+                    <div class="border-l-4 ${fromOtherDevice ? 'border-purple-500' : 'border-primary'} pl-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-900/50 rounded-r-xl">
                         <div class="flex justify-between items-start mb-1">
                             <p class="font-medium text-slate-900 dark:text-white">${record.courseCode}</p>
                             <span class="text-xs text-green-600 dark:text-green-400 bg-green-100 dark:bg-green-900/30 px-2 py-1 rounded-full">Present</span>
@@ -1475,12 +1684,15 @@
                             <span class="material-symbols-outlined align-middle text-xs">location_on</span>
                             ${record.latitude.toFixed(4)}, ${record.longitude.toFixed(4)}
                         </p>
-                        <p class="text-xs text-slate-500 dark:text-slate-500 mt-1">
-                            <span class="material-symbols-outlined align-middle text-xs">cloud_sync</span>
-                            ${record.synced ? 'Cloud-synced' : 'Pending sync'}
-                        </p>
+                        <div class="flex items-center mt-1 space-x-2">
+                            ${record.synced ? 
+                                '<span class="text-xs text-green-600 dark:text-green-400 flex items-center"><span class="material-symbols-outlined text-xs mr-1">cloud_done</span>Cloud-synced</span>' : 
+                                '<span class="text-xs text-yellow-600 dark:text-yellow-400 flex items-center"><span class="material-symbols-outlined text-xs mr-1">cloud_off</span>Pending sync</span>'}
+                            ${fromOtherDevice ? 
+                                '<span class="text-xs text-purple-600 dark:text-purple-400 flex items-center"><span class="material-symbols-outlined text-xs mr-1">devices</span>From another device</span>' : ''}
+                        </div>
                     </div>
-                `).join('');
+                `}).join('');
             } else {
                 recentAttendance.innerHTML = `
                     <div class="text-center py-8">
@@ -1692,7 +1904,9 @@
                 date: new Date().toISOString().split('T')[0],
                 time: new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' }),
                 submittedFrom: navigator.userAgent,
-                deviceType: /Mobile|Android|iPhone|iPad|iPod/.test(navigator.userAgent) ? 'Mobile' : 'Desktop',
+                deviceType: getDeviceInfo().type,
+                deviceName: getDeviceInfo().name,
+                sessionId: sessionId,
                 synced: false,
                 createdAt: timestamp
             };
@@ -1777,7 +1991,7 @@
             // Update dashboard stats
             document.getElementById('totalStudents').textContent = uniqueStudents;
             document.getElementById('presentToday').textContent = todayRecords.length.toString();
-            document.getElementById('activeSessions').textContent = '2'; // Mock data
+            document.getElementById('activeSessions').textContent = Object.keys(activeSessions).length.toString();
             
             // Load attendance table
             loadSubmittedAttendanceTable(records);
@@ -1855,9 +2069,7 @@
             // Render table rows
             submittedAttendance.innerHTML = pageRecords.map(record => {
                 // Determine if record is from another device
-                const isFromOtherDevice = record.deviceType && 
-                    ((record.deviceType === 'Mobile' && !/Mobile|Android|iPhone|iPad|iPod/.test(navigator.userAgent)) ||
-                     (record.deviceType === 'Desktop' && /Mobile|Android|iPhone|iPad|iPod/.test(navigator.userAgent)));
+                const isFromOtherDevice = record.sessionId && record.sessionId !== sessionId;
                 
                 return `
                 <tr class="border-t border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-900/50 transition-colors">
@@ -1873,6 +2085,7 @@
                             ${isFromOtherDevice ? 
                                 '<span class="ml-2 material-symbols-outlined text-sm text-purple-500" title="From another device">devices</span>' : ''}
                         </div>
+                        ${record.deviceName ? `<div class="text-xs text-slate-500 mt-1">${record.deviceName}</div>` : ''}
                     </td>
                     <td class="py-3 px-4 font-mono">${record.matricNumber}</td>
                     <td class="py-3 px-4">
@@ -1882,7 +2095,6 @@
                     <td class="py-3 px-4">${record.time}</td>
                     <td class="py-3 px-4 font-mono text-xs">
                         ${record.longitude.toFixed(4)}, ${record.latitude.toFixed(4)}
-                        <br><span class="text-xs text-slate-500">${record.deviceType}</span>
                     </td>
                     <td class="py-3 px-4">
                         <div class="flex items-center space-x-2">
@@ -1945,9 +2157,10 @@
                             <div class="info">
                                 <p><strong>${record.studentName} - ${record.matricNumber}</strong></p>
                                 <p>${record.courseCode} - ${record.date} ${record.time}</p>
-                                <p class="device-info">Submitted from: ${record.deviceType || 'Unknown device'}</p>
+                                <p class="device-info">Submitted from: ${record.deviceName || record.deviceType || 'Unknown device'}</p>
                                 <p class="device-info">Location: ${record.latitude.toFixed(4)}, ${record.longitude.toFixed(4)}</p>
                                 <p class="device-info">Cloud Sync: ${record.synced ? 'Yes' : 'Pending'}</p>
+                                <p class="device-info">Device ID: ${record.sessionId ? record.sessionId.substring(0, 8) + '...' : 'Unknown'}</p>
                             </div>
                         </div>
                     </body>
@@ -2006,7 +2219,7 @@
                         record.date,
                         record.time,
                         `${record.latitude.toFixed(6)}, ${record.longitude.toFixed(6)}`,
-                        record.deviceType || 'Unknown',
+                        record.deviceName || record.deviceType || 'Unknown',
                         record.submittedFrom ? record.submittedFrom.substring(0, 30) + '...' : 'Unknown'
                     ]];
                     
@@ -2036,7 +2249,7 @@
                             3: { cellWidth: 20 },
                             4: { cellWidth: 18 },
                             5: { cellWidth: 40 },
-                            6: { cellWidth: 18 },
+                            6: { cellWidth: 20 },
                             7: { cellWidth: 55 }
                         },
                         alternateRowStyles: {
@@ -2056,7 +2269,7 @@
                         ['Face Verification', '✓ Verified', 'Live Capture', 'Success'],
                         ['Location Verification', '✓ Verified', 'GPS Coordinates', 'High Accuracy'],
                         ['Timestamp Verification', '✓ Verified', 'System Time', 'Valid'],
-                        ['Device Verification', '✓ Verified', record.deviceType || 'Unknown', 'Authenticated'],
+                        ['Device Verification', '✓ Verified', record.deviceName || record.deviceType || 'Unknown', 'Authenticated'],
                         ['Cloud Sync', record.synced ? '✓ Synced' : '○ Pending', 'JSONBin.io', record.synced ? 'Complete' : 'Local Only']
                     ];
                     
@@ -2157,7 +2370,7 @@
                     record.date,
                     record.time,
                     `${record.latitude.toFixed(4)}, ${record.longitude.toFixed(4)}`,
-                    record.deviceType || 'Unknown',
+                    record.deviceName || record.deviceType || 'Unknown',
                     record.synced ? '✓' : '○'
                 ]);
                 
@@ -2184,7 +2397,7 @@
                         3: { cellWidth: 18 },
                         4: { cellWidth: 16 },
                         5: { cellWidth: 35 },
-                        6: { cellWidth: 12 },
+                        6: { cellWidth: 18 },
                         7: { cellWidth: 10 }
                     },
                     alternateRowStyles: {
@@ -2320,7 +2533,7 @@
                     record.courseCode,
                     record.date,
                     record.time,
-                    record.deviceType || 'Unknown',
+                    record.deviceName || record.deviceType || 'Unknown',
                     record.synced ? 'Yes' : 'No'
                 ]);
                 
@@ -2396,9 +2609,9 @@
                 return;
             }
             
-            let csv = 'Student Name,Matric Number,Course Code,Date,Time,Latitude,Longitude,Device Type,Cloud Synced,Submitted From\n';
+            let csv = 'Student Name,Matric Number,Course Code,Date,Time,Latitude,Longitude,Device Name,Device Type,Cloud Synced,Submitted From\n';
             records.forEach(record => {
-                csv += `"${record.studentName}","${record.matricNumber}","${record.courseCode}","${record.date}","${record.time}",${record.latitude},${record.longitude},"${record.deviceType || ''}","${record.synced ? 'Yes' : 'No'}","${record.submittedFrom || ''}"\n`;
+                csv += `"${record.studentName}","${record.matricNumber}","${record.courseCode}","${record.date}","${record.time}",${record.latitude},${record.longitude},"${record.deviceName || ''}","${record.deviceType || ''}","${record.synced ? 'Yes' : 'No'}","${record.submittedFrom || ''}"\n`;
             });
             
             const blob = new Blob([csv], { type: 'text/csv' });
@@ -2438,7 +2651,7 @@
             
             document.getElementById('totalAdmins').textContent = users.filter(u => u.role === 'admin').length;
             document.getElementById('totalUsers').textContent = users.length;
-            document.getElementById('activeSessionsAdmin').textContent = '3';
+            document.getElementById('activeSessionsAdmin').textContent = Object.keys(activeSessions).length.toString();
             document.getElementById('attendanceToday').textContent = todayRecords.length;
             document.getElementById('pendingApprovals').textContent = pendingLecturers.length;
             
@@ -2536,6 +2749,7 @@
                 message += `   Role: ${user.role}\n`;
                 message += `   Status: ${user.isApproved ? 'Approved' : 'Pending'}\n`;
                 if (user.matricNumber) message += `   Matric: ${user.matricNumber}\n`;
+                if (user.lastDevice) message += `   Last Device: ${user.lastDevice.name}\n`;
                 message += `   Created: ${new Date(user.createdAt || Date.now()).toLocaleString()}\n`;
                 message += '─'.repeat(40) + '\n';
             });
@@ -2557,7 +2771,7 @@
                 message += `   Matric: ${record.matricNumber}\n`;
                 message += `   Course: ${record.courseCode}\n`;
                 message += `   Date: ${record.date} ${record.time}\n`;
-                message += `   Device: ${record.deviceType || 'Unknown'}\n`;
+                message += `   Device: ${record.deviceName || record.deviceType || 'Unknown'}\n`;
                 message += `   Location: ${record.latitude.toFixed(4)}, ${record.longitude.toFixed(4)}\n`;
                 message += `   Cloud Sync: ${record.synced ? 'Yes' : 'Pending'}\n`;
                 message += '─'.repeat(40) + '\n';
@@ -2709,6 +2923,9 @@
             console.log('DOM loaded, initializing...');
             initializeTheme();
             
+            // Generate a session ID for this device even if not logged in
+            sessionId = generateSessionId();
+            
             // Initialize sync - but don't wait for it
             setTimeout(async () => {
                 if (navigator.onLine) {
@@ -2722,25 +2939,53 @@
                 try {
                     currentUser = JSON.parse(savedUser);
                     console.log('Found saved user:', currentUser.role);
-                    updateNavigation();
                     
-                    // Redirect to appropriate dashboard based on user role
-                    setTimeout(() => {
-                        switch(currentUser.role) {
-                            case 'student':
-                                showView('studentDashboard');
-                                break;
-                            case 'lecturer':
-                                showView('lecturerDashboard');
-                                break;
-                            case 'admin':
-                                showView('adminDashboard');
-                                break;
-                            default:
-                                console.log('Unknown role, showing home');
-                                showView('home');
-                        }
-                    }, 100);
+                    // Restore session
+                    if (currentUser.sessionId) {
+                        sessionId = currentUser.sessionId;
+                    }
+                    
+                    // Load active sessions
+                    activeSessions = JSON.parse(localStorage.getItem('activeSessions') || '{}');
+                    
+                    // Check if this session is still valid (not logged out from another device)
+                    if (!activeSessions[sessionId] && currentUser) {
+                        console.log('Session was terminated from another device');
+                        showFlashMessage('You have been logged out from another device', 'warning');
+                        logout();
+                    } else {
+                        // Update session last active
+                        activeSessions[sessionId].lastActive = Date.now();
+                        localStorage.setItem('activeSessions', JSON.stringify(activeSessions));
+                        
+                        updateNavigation();
+                        updateDeviceCount();
+                        
+                        // Redirect to appropriate dashboard based on user role
+                        setTimeout(() => {
+                            switch(currentUser.role) {
+                                case 'student':
+                                    showView('studentDashboard');
+                                    break;
+                                case 'lecturer':
+                                    showView('lecturerDashboard');
+                                    break;
+                                case 'admin':
+                                    showView('adminDashboard');
+                                    break;
+                                default:
+                                    console.log('Unknown role, showing home');
+                                    showView('home');
+                            }
+                        }, 100);
+                        
+                        // Start periodic session updates
+                        setInterval(async () => {
+                            if (currentUser) {
+                                await syncSessionState();
+                            }
+                        }, 30000); // Update every 30 seconds
+                    }
                 } catch (e) {
                     console.error('Error parsing saved user:', e);
                     showView('splash');
@@ -2853,10 +3098,33 @@
             window.addEventListener('online', async () => {
                 showFlashMessage('You are back online. Syncing data...', 'success');
                 await syncData();
+                if (currentUser) {
+                    await syncSessionState();
+                }
             });
             
             window.addEventListener('offline', () => {
                 showFlashMessage('You are offline. Working with local data.', 'warning');
+            });
+            
+            // Before unload, update session state
+            window.addEventListener('beforeunload', () => {
+                if (currentUser && sessionId && activeSessions[sessionId]) {
+                    // Mark session as inactive (will be cleaned up on next sync)
+                    delete activeSessions[sessionId];
+                    localStorage.setItem('activeSessions', JSON.stringify(activeSessions));
+                    
+                    // Try to sync one last time (synchronous XHR)
+                    try {
+                        const xhr = new XMLHttpRequest();
+                        xhr.open('POST', REMOTE_STORAGE_URL + '/sessions', false); // synchronous
+                        xhr.setRequestHeader('Content-Type', 'application/json');
+                        xhr.setRequestHeader('X-Master-Key', API_KEY);
+                        xhr.send(JSON.stringify({ sessions: activeSessions }));
+                    } catch (e) {
+                        console.log('Could not sync on unload');
+                    }
+                }
             });
             
             console.log('Event listeners initialized');
